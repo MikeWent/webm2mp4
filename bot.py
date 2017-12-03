@@ -53,7 +53,7 @@ bot = telebot.TeleBot(TOKEN)
 
 @bot.message_handler(commands=['webm'])
 def webm2mp4(message):
-    url = get_commmand_args(message.text).strip()
+    url = message.text if not message.text[0] == '/' else get_commmand_args(message.text).strip()
     if url == '':
         bot.reply_to(message, messageWebmSyntax, parse_mode='HTML')
         return
@@ -119,6 +119,11 @@ def webm2mp4(message):
     bot.delete_message(message.chat.id, status_message.message_id)
     rm(temp_filename+'.webm')
     rm(temp_filename+'.mp4')
+
+@bot.message_handler(func=lambda m: True)
+def symlink(message):
+    if message.text.endswith('.webm'):
+        webm2mp4(message)
 
 @bot.message_handler(commands=['start', 'help'])
 def start_help(message):
