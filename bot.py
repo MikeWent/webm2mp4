@@ -27,7 +27,8 @@ errorHugeFile = 'File is bigger than 50 MB. Telegram does not allow to send huge
 errorNoHeader = 'WTF? I do not understand what server tries to give me instead of .webm file'
 errorNotWebm = 'This is not a .webm'
 
-messageHelp = 'Send me a link to .webm file. Example: <code>/webm http://site.ru/video.webm</code>'
+messageWebmSyntax = 'Syntax: <code>/webm http://host.com/video.webm</code>'
+messageStart = 'Hello! I am webm to mp4 converter. Send me a <b>link to webm file</b>, I will convert it and upload mp4 to Telegram.\n\n'+messageWebmSyntax
 messageProcessing = 'Processing...'
 messageDownloading = 'Downloading file...'
 messageConverting = 'Converting to MP4 (please be patient)...'
@@ -54,7 +55,7 @@ bot = telebot.TeleBot(TOKEN)
 def webm2mp4(message):
     url = get_commmand_args(message.text).strip()
     if url == '':
-        bot.reply_to(message, messageHelp, parse_mode='HTML')
+        bot.reply_to(message, messageWebmSyntax, parse_mode='HTML')
         return
     elif not url.endswith('.webm'):
         bot.reply_to(message, errorWrongURL, parse_mode='HTML')
@@ -118,5 +119,9 @@ def webm2mp4(message):
     bot.delete_message(message.chat.id, status_message.message_id)
     rm(temp_filename+'.webm')
     rm(temp_filename+'.mp4')
+
+@bot.message_handler(commands=['start', 'help'])
+def start_help(message):
+    bot.reply_to(message, messageStart, parse_mode='HTML')
 
 bot.polling(none_stop=True, interval=3)
