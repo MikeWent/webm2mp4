@@ -51,7 +51,7 @@ def rm(filename):
 
 bot = telebot.TeleBot(TOKEN)
 
-@bot.message_handler(commands=['start')
+@bot.message_handler(commands=['start'])
 def start_help(message):
     bot.reply_to(message, messageStart, parse_mode='HTML')
 
