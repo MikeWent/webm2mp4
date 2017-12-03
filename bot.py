@@ -12,7 +12,7 @@ import requests
 import telebot
 
 # SETTINGS
-TOKEN = ''
+TOKEN = '473520245:AAE28hHkR5tSnfb02C7LbsU74ZmPlGuSLoI'
 TEMP_FOLDER = '/tmp/'
 HEADERS = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.91 Safari/537.36 Viv/1.92.917.39',
            # for real size in headers
@@ -50,6 +50,10 @@ def rm(filename):
         pass
 
 bot = telebot.TeleBot(TOKEN)
+
+@bot.message_handler(commands=['start')
+def start_help(message):
+    bot.reply_to(message, messageStart, parse_mode='HTML')
 
 @bot.message_handler(commands=['webm'])
 def webm2mp4(message):
@@ -124,9 +128,5 @@ def webm2mp4(message):
 def symlink(message):
     if message.text.endswith('.webm'):
         webm2mp4(message)
-
-@bot.message_handler(commands=['start', 'help'])
-def start_help(message):
-    bot.reply_to(message, messageStart, parse_mode='HTML')
 
 bot.polling(none_stop=True, interval=3)
