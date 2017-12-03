@@ -12,7 +12,7 @@ import requests
 import telebot
 
 # SETTINGS
-TOKEN = '473520245:AAE28hHkR5tSnfb02C7LbsU74ZmPlGuSLoI'
+TOKEN = ''
 TEMP_FOLDER = '/tmp/'
 HEADERS = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.91 Safari/537.36 Viv/1.92.917.39',
            # for real size in headers
