@@ -1,6 +1,6 @@
 # webm2mp4 Telegram bot
 
-This bot converts .webm files and .webm links to .mp4 video via ffpmeg.
+[This bot](https://t.me/webm2mp4bot) converts .webm files and .webm links to .mp4 video via ffpmeg.
 
 Input & output files has limit of size 50 MB.
 

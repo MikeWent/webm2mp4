@@ -16,7 +16,7 @@ TOKEN = ''
 TEMP_FOLDER = '/tmp/'
 HEADERS = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.91 Safari/537.36 Viv/1.92.917.39',
            # for real size in headers
-           'Accept-Encoding': 'identity'} 
+           'Accept-Encoding': 'identity'}
 
 # MESSAGES
 errorWrongCode = 'Resource returned HTTP {} code. Check link or try again later :c'
@@ -64,25 +64,25 @@ def webm2mp4(message):
     elif not url.endswith('.webm'):
         bot.reply_to(message, errorWrongURL, parse_mode='HTML')
         return
-    
+
     # generate temp filename
     temp_filename = TEMP_FOLDER + ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(12))
-    
+
     status_message = bot.reply_to(message, messageProcessing, parse_mode='HTML')
     try:
         r = requests.get(url, stream=True, headers=HEADERS)
     except:
         update_status_message(status_message, errorDownloading)
         return
-    
+
     if r.status_code == 200:
         if not 'Content-Length' in r.headers or not 'Content-Type' in r.headers:
             update_status_message(status_message, errorNoHeader)
-            return   
+            return
         if r.headers['Content-Type'] != 'video/webm':
             update_status_message(status_message, errorNotWebm)
             return
-        
+
         webm_size = int(r.headers['Content-Length'])
         if webm_size >= 52428800:
              update_status_message(status_message, errorHugeFile)
@@ -96,7 +96,7 @@ def webm2mp4(message):
         update_status_message(status_message, errorWrongCode.format(r.status_code))
         rm(temp_filename+'.webm')
         return
-    
+
     update_status_message(status_message, messageConverting)
     # start ffmpeg
     ff = ffmpy.FFmpeg(global_options='-loglevel panic',
@@ -110,12 +110,12 @@ def webm2mp4(message):
         rm(temp_filename+'.webm')
         rm(temp_filename+'.mp4')
         return
-    
+
     mp4_size = os.path.getsize(temp_filename+'.mp4')
     if mp4_size >= 52428800:
         update_status_message(status_message, errorHugeFile)
         return
-    
+
     update_status_message(status_message, messageUploading)
     bot.send_chat_action(chat_id=message.chat.id, action='upload_video')
     mp4 = open(temp_filename+'.mp4', 'rb')
