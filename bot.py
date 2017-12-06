@@ -26,7 +26,6 @@ errorWrongURL = 'This URL does not look like a .webm file'
 errorHugeFile = 'File is bigger than 50 MB. Telegram does not allow to send huge files.'
 errorNoHeader = 'WTF? I do not understand what server tries to give me instead of .webm file'
 errorNotWebm = 'This is not a .webm'
-
 messageWebmSyntax = 'Syntax: <code>/webm http://host.com/video.webm</code>'
 messageStart = 'Hello! I am webm to mp4 converter. Send me a <b>link to webm file</b>, I will convert it and upload mp4 to Telegram.\n\n'+messageWebmSyntax
 messageProcessing = 'Processing...'
@@ -124,9 +123,9 @@ def webm2mp4(message):
     rm(temp_filename+'.webm')
     rm(temp_filename+'.mp4')
 
-@bot.message_handler(func=lambda m: True)
+# also handle messages with .webm in the end
+@bot.message_handler(func=lambda message: message.text.endswith('.webm') if message.text else False)
 def symlink(message):
-    if message.text.endswith('.webm'):
-        webm2mp4(message)
+    webm2mp4(message)
 
 bot.polling(none_stop=True, interval=3)
