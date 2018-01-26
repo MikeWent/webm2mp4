@@ -6,9 +6,9 @@ Input & output files has limit of size 50 MB.
 
 ## Installation
 
-- install `ffmpeg`, `python3-pip`
+- install `ffmpeg`, `progress`, `python3-pip`
 - `pip install --user -r requirements.txt`
-- done
+- set your Telegram bot token (line 17)
 
 ## License
 
