@@ -9,6 +9,7 @@ import string
 import random
 import time
 import os
+import re
 # external modules
 import requests
 import telebot
@@ -19,6 +20,8 @@ TEMP_FOLDER = '/tmp/'
 HEADERS = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.91 Safari/537.36 Viv/1.92.917.39',
            # for real size in headers
            'Accept-Encoding': 'identity'}
+URL_REGEXP = r'(http.?:\/\/.*\.webm)'
+MAXIMUM_FILESIZE_ALLOWED = 50*1024*1024 # ~50 MB
 
 # MESSAGES
 error_wrong_code = 'Resource returned HTTP {} code. Check link or try again later :c'
@@ -35,10 +38,6 @@ message_downloading = 'Downloading file...'
 message_progress = 'Converting... {}'
 message_uploading = 'Uploading to Telegram...'
 
-def get_commmand_args(message_text):
-    """Get telegram command arguments. Example: 'args' in '/command args'"""
-    return ''.join([x+' ' for x in message_text.split(' ')[1:]])
-
 def update_status_message(message, text):
     bot.edit_message_text(chat_id = message.chat.id,
                           message_id = message.message_id,
@@ -50,55 +49,56 @@ def rm(filename):
     except:
         pass
 
-def webm2mp4_worker(message):
-    # check url
-    url = message.text if not message.text[0] == '/' else get_commmand_args(message.text).strip()
-    if url == '':
-        bot.reply_to(message, message_help, parse_mode='HTML')
-        return
-    elif not url.endswith('.webm'):
-        bot.reply_to(message, error_wrong_url, parse_mode='HTML')
-        return
-    # generate temp filename
-    temp_filename = TEMP_FOLDER + ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(12))
+def random_string(length=12):
+    return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(length))
+
+def webm2mp4_worker(message, url):
+    # generate temporary 12 symbols filename 
+    filename = TEMP_FOLDER + random_string()
     # tell user that we are working
     status_message = bot.reply_to(message, message_processing, parse_mode='HTML')
+    # try to download URL
     try:
         r = requests.get(url, stream=True, headers=HEADERS)
     except:
         update_status_message(status_message, error_downloading)
         return
-    if r.status_code == 200:
-        if not 'Content-Length' in r.headers or not 'Content-Type' in r.headers:
-            update_status_message(status_message, error_no_header)
-            return
-        if r.headers['Content-Type'] != 'video/webm':
-            update_status_message(status_message, error_file_not_webm)
-            return
-        # check file size
-        webm_size = int(r.headers['Content-Length'])
-        if webm_size >= 52428800:
-             update_status_message(status_message, error_huge_file)
-             return
-        update_status_message(status_message, message_downloading)
-        # buffered download
-        with open(temp_filename+'.webm', 'wb') as f:
-            for chunk in r:
-                f.write(chunk)
-    else:
-        # somethig went worng on the server-side
+    # somethig went worng on the server-side
+    if r.status_code != 200:
         update_status_message(status_message, error_wrong_code.format(r.status_code))
         # cleanup
-        rm(temp_filename+'.webm')
+        rm(filename+'.webm')
         return
+    # is it a webm file or not
+    if r.headers['Content-Type'] != 'video/webm' and message.document.mime_type != 'video/webm':
+        update_status_message(status_message, error_file_not_webm)
+        return
+    # can't determine file size
+    if not 'Content-Length' in r.headers or not 'Content-Type' in r.headers:
+        update_status_message(status_message, error_no_header)
+        return
+    # check file size
+    webm_size = int(r.headers['Content-Length'])
+    if webm_size >= MAXIMUM_FILESIZE_ALLOWED: 
+        update_status_message(status_message, error_huge_file)
+        return
+    update_status_message(status_message, message_downloading)
+    # buffered download
+    try:
+        with open(filename+'.webm', 'wb') as f:
+            for chunk in r:
+                f.write(chunk)
+    except:
+        update_status_message(status_message, error_downloading)
+
     # start converting
     ffmpeg_process = subprocess.Popen(["ffmpeg",
-        "-i", temp_filename+".webm",
-        "-c:v",      "libx265",     # specify encoder
+        "-i", filename+".webm",
+        "-c:v",      "libx264",     # specify encoder
         "-movflags", "+faststart",  # optimize for streaming
-        "-preset",   "faster",      # "speed / filesize"
+        "-preset",   "slow",       # "speed / filesize"
         "-tune",     "fastdecode",
-        temp_filename+".mp4"
+        filename+".mp4"
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     ffmpeg_process_pid = ffmpeg_process.pid
     while ffmpeg_process.poll() == None: # while ffmpeg process is working
@@ -114,18 +114,18 @@ def webm2mp4_worker(message):
         update_status_message(status_message, error_converting)
         return
     # check output file size
-    mp4_size = os.path.getsize(temp_filename+'.mp4')
-    if mp4_size >= 52428800: # ~50 MB
+    mp4_size = os.path.getsize(filename+'.mp4')
+    if mp4_size >= MAXIMUM_FILESIZE_ALLOWED:
         update_status_message(status_message, error_huge_file)
         return
     # upload
     update_status_message(status_message, message_uploading)
-    mp4 = open(temp_filename+'.mp4', 'rb')
+    mp4 = open(filename+'.mp4', 'rb')
     bot.send_video(message.chat.id, mp4, reply_to_message_id=message.message_id, supports_streaming=True)
     bot.delete_message(message.chat.id, status_message.message_id)
     # cleanup
-    rm(temp_filename+'.webm')
-    rm(temp_filename+'.mp4')
+    rm(filename+'.webm')
+    rm(filename+'.mp4')
 
 ### Telegram interaction below ###
 bot = telebot.TeleBot(TOKEN)
@@ -134,15 +134,23 @@ bot = telebot.TeleBot(TOKEN)
 def start_help(message):
     bot.reply_to(message, message_start, parse_mode='HTML')
 
-@bot.message_handler(commands=['webm'])
-def webm2mp4(message):
-    new_worker = threading.Thread(target=webm2mp4_worker, kwargs={"message": message})
+# handle URLs
+@bot.message_handler(regexp=URL_REGEXP)
+def handle_urls(message):
+    # grab first found link
+    url = re.findall(URL_REGEXP, message.text)[0]
+    new_worker = threading.Thread(target=webm2mp4_worker, kwargs={"message": message, "url": url})
     new_worker.start()
-    return
 
-# also handle messages with just .webm in the end
-@bot.message_handler(func=lambda message: message.text.endswith('.webm') if message.text else False)
-def symlink(message):
-    webm2mp4(message)
+# handle files
+@bot.message_handler(content_types=['document'])
+def handle_files(message):
+    if message.document.mime_type != 'video/webm':
+        return
+    file_id = message.document.file_id
+    file_info = bot.get_file(file_id)
+    url = 'https://api.telegram.org/file/bot{0}/{1}'.format(TOKEN, file_info.file_path)
+    new_worker = threading.Thread(target=webm2mp4_worker, kwargs={"message": message, "url": url})
+    new_worker.start()
 
 bot.polling(none_stop=True, interval=3)
