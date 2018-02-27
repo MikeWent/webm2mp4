@@ -92,7 +92,14 @@ def webm2mp4_worker(message):
         rm(temp_filename+'.webm')
         return
     # start converting
-    ffmpeg_process = subprocess.Popen(["ffmpeg", "-loglevel", "fatal", "-i", temp_filename+".webm", temp_filename+".mp4"])
+    ffmpeg_process = subprocess.Popen(["ffmpeg",
+        "-i", temp_filename+".webm",
+        "-c:v",      "libx265",     # specify encoder
+        "-movflags", "+faststart",  # optimize for streaming
+        "-preset",   "faster",      # "speed / filesize"
+        "-tune",     "fastdecode",
+        temp_filename+".mp4"
+    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     ffmpeg_process_pid = ffmpeg_process.pid
     while ffmpeg_process.poll() == None: # while ffmpeg process is working
         time.sleep(5)
@@ -114,7 +121,7 @@ def webm2mp4_worker(message):
     # upload
     update_status_message(status_message, message_uploading)
     mp4 = open(temp_filename+'.mp4', 'rb')
-    bot.send_video(message.chat.id, mp4, reply_to_message_id=message.message_id)
+    bot.send_video(message.chat.id, mp4, reply_to_message_id=message.message_id, supports_streaming=True)
     bot.delete_message(message.chat.id, status_message.message_id)
     # cleanup
     rm(temp_filename+'.webm')
