@@ -91,15 +91,18 @@ def webm2mp4_worker(message, url):
                 f.write(chunk)
     except:
         update_status_message(status_message, error_downloading)
-    # Start converting
+    # (add args 'stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL' to suppress ffmpeg output)
     ffmpeg_process = subprocess.Popen(["ffmpeg",
         "-i", filename+".webm",
-        "-c:v",      "libx264",     # specify encoder
-        "-movflags", "+faststart",  # optimize for streaming
-        "-preset",   "slow",        # "speed / filesize"
-        "-tune",     "fastdecode",
+        "-map", "V:0?", # select video stream
+        "-map", "0:a?", # ignore audio if doesn't exist
+        "-c:v", "libx264", # specify video encoder
+        "-max_muxing_queue_size", "9999", # https://trac.ffmpeg.org/ticket/6375
+        "-movflags", "+faststart", # optimize for streaming
+        "-preset", "slow", # https://trac.ffmpeg.org/wiki/Encode/H.264#a2.Chooseapresetandtune
+        "-timelimit", "900", # prevent DoS (exit after 15 min)
         filename+".mp4"
-    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    ]) 
     ffmpeg_process_pid = ffmpeg_process.pid
     # While ffmpeg process is alive (i.e. is working)
     while ffmpeg_process.poll() == None:
