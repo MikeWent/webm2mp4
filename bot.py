@@ -21,6 +21,7 @@ HEADERS = {
     'Accept-Encoding': 'identity'
 }
 MAXIMUM_FILESIZE_ALLOWED = 50*1024*1024 # ~50 MB
+FFMPEG_THREADS = 4
 
 # MESSAGES
 error_wrong_code = 'Resource returned HTTP {} code. Maybe link is broken'
@@ -91,6 +92,7 @@ def webm2mp4_worker(message, url):
         update_status_message(status_message, error_downloading)
     # (add args 'stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL' to suppress ffmpeg output)
     ffmpeg_process = subprocess.Popen(["ffmpeg",
+        "-threads", str(FFMPEG_THREADS),
         "-i", filename+".webm",
         "-map", "V:0?", # select video stream
         "-map", "0:a?", # ignore audio if doesn't exist
