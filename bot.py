@@ -15,23 +15,22 @@ import requests
 import telebot
 
 # SETTINGS
-TOKEN = ''
 TEMP_FOLDER = '/tmp/'
-HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.181 Safari/537.36',
-           'Accept-Encoding': 'identity'}
-URL_REGEXP = r'(http.?:\/\/.*\.webm)'
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.181 Safari/537.36',
+    'Accept-Encoding': 'identity'
+}
 MAXIMUM_FILESIZE_ALLOWED = 50*1024*1024 # ~50 MB
 
 # MESSAGES
-error_wrong_code = 'Resource returned HTTP {} code. Check link or try again later :c'
+error_wrong_code = 'Resource returned HTTP {} code. Maybe link is broken'
 error_downloading = 'Unable to download file'
-error_converting = 'Sorry, ffmpeg seems unable to convert this file to MP4'
+error_converting = 'Sorry, ffmpeg seems unable to convert this file to MP4. Contact @Mike_Went (bot author)'
 error_wrong_url = 'This URL does not look like a .webm file'
-error_huge_file = 'File is bigger than 50 MB. Telegram does not allow to send huge files.'
+error_huge_file = 'File is bigger than 50 MB. Telegram <b>does not<b> allow me to upload huge files, sorry.'
 error_no_header = 'WTF? I do not understand what server tries to give me instead of .webm file'
-error_file_not_webm = 'This is not a .webm'
-message_start = 'Hello! I am webm to mp4 converter bot. Send me a <b>link to webm file</b>, or <b>just webm file</b>. I will convert it and upload mp4 to Telegram.'
-message_processing = 'Processing...'
+error_file_not_webm = 'This is not a .webm file'
+message_start = 'Hello! I am webm to mp4 converter bot.\n\nSend me a link to webm file or just webm file.'
 message_downloading = 'Downloading file...'
 message_progress = 'Converting... {}'
 message_uploading = 'Uploading to Telegram...'
@@ -57,14 +56,14 @@ def webm2mp4_worker(message, url):
     # Generate temporary 12 symbols filename 
     filename = TEMP_FOLDER + random_string()
     # Tell user that we are working
-    status_message = bot.reply_to(message, message_processing, parse_mode='HTML')
+    status_message = bot.reply_to(message, message_downloading, parse_mode='HTML')
     # Try to download URL
     try:
         r = requests.get(url, stream=True, headers=HEADERS)
     except:
         update_status_message(status_message, error_downloading)
         return
-    # Somethig went worng on the server-side
+    # Somethig went worng on the server side
     if r.status_code != 200:
         update_status_message(status_message, error_wrong_code.format(r.status_code))
         # Clean up
@@ -83,7 +82,6 @@ def webm2mp4_worker(message, url):
     if webm_size >= MAXIMUM_FILESIZE_ALLOWED: 
         update_status_message(status_message, error_huge_file)
         return
-    update_status_message(status_message, message_downloading)
     # Buffered download
     try:
         with open(filename+'.webm', 'wb') as f:
@@ -132,13 +130,20 @@ def webm2mp4_worker(message, url):
     rm(filename+'.mp4')
 
 ### Telegram interaction below ###
-bot = telebot.TeleBot(TOKEN)
+try:
+    with open("token.txt", "r") as f:
+        telegram_token = f.read().strip()
+except FileNotFoundError:
+    print("Put your Telegram bot token to 'token.txt' file")
+    exit(1)
+bot = telebot.TeleBot(telegram_token)
 
-@bot.message_handler(commands=['start'])
+@bot.message_handler(commands=['start', 'help'])
 def start_help(message):
     bot.reply_to(message, message_start, parse_mode='HTML')
 
 # Handle URLs
+URL_REGEXP = r'(http.?:\/\/.*\.webm)'
 @bot.message_handler(regexp=URL_REGEXP)
 def handle_urls(message):
     # Grab first found link
@@ -153,7 +158,7 @@ def handle_files(message):
         return
     file_id = message.document.file_id
     file_info = bot.get_file(file_id)
-    url = 'https://api.telegram.org/file/bot{0}/{1}'.format(TOKEN, file_info.file_path)
+    url = 'https://api.telegram.org/file/bot{0}/{1}'.format(telegram_token, file_info.file_path)
     new_worker = threading.Thread(target=webm2mp4_worker, kwargs={"message": message, "url": url})
     new_worker.start()
 
