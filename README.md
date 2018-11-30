@@ -4,7 +4,7 @@
 
 ## Installation
 
-1. Install `ffmpeg`, `progress`, `python3-pip` to your system
+1. Install `ffmpeg`, `python3-pip` to your system
 2. Run `pip3 install --user -r requirements.txt`
 3. Put your Telegram bot token to `token.txt` file
 4. Run `install-systemd-unit.sh` script (optionally). _Notice: `sudo` must be installed and configured._

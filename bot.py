@@ -14,7 +14,7 @@ import time
 import requests
 import telebot
 
-from hurry.filesize import size
+from hurry.filesize import size, alternative
 
 # SETTINGS
 TEMP_FOLDER = "/tmp/"
@@ -42,9 +42,12 @@ message_progress = "☕️ Converting... {}"
 message_uploading = "☁️ Uploading to Telegram..."
 
 def update_status_message(message, text):
-    bot.edit_message_text(chat_id=message.chat.id,
+    try:
+        bot.edit_message_text(chat_id=message.chat.id,
                           message_id=message.message_id,
                           text=text, parse_mode="HTML")
+    except:
+        pass
 
 
 def rm(filename):
@@ -133,16 +136,12 @@ def webm2mp4_worker(message, url):
         update_status_message(status_message, error_downloading)
         return
 
-    ffmpeg_process_pid = ffmpeg_process.pid
     # While ffmpeg process is alive (i.e. is working)
     while ffmpeg_process.poll() == None:
-        time.sleep(5)
-        # Get ffmpeg progress
-        ffmpeg_progress = subprocess.run(["progress", "--quiet", "--pid", str(ffmpeg_process_pid)], stdout=subprocess.PIPE).stdout.decode("utf-8")
-        if ffmpeg_progress == "":
-            continue
-        raw_progress = ffmpeg_progress.split("\n")[1].strip()
-        human_readable_progress = "".join(raw_progress.split(" ")[1:3])[1:-2] + " / " + size(int(r.headers["Content-Length"]))
+        time.sleep(3)
+        output_file_size = os.stat(filename).st_size
+        human_readable_progress = size(output_file_size, system=alternative) + " / " + \
+                                  size(int(r.headers["Content-Length"]), system=alternative)
         update_status_message(status_message, message_progress.format(human_readable_progress))
 
     # Exit if ffmpeg crashed
