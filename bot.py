@@ -14,6 +14,8 @@ import time
 import requests
 import telebot
 
+from hurry.filesize import size
+
 # SETTINGS
 TEMP_FOLDER = "/tmp/"
 HEADERS = {
@@ -35,7 +37,7 @@ message_start = """Hello! I am WebM to MP4 (H.264) converter bot 📺
 
 You can send .webm files up to 20 MB via Telegram and receive converted videos up to ☁️ 50 MB back (from any source — link/document)."""
 message_help = "Send me a link (http://...) to <b>webm</b> file or just .webm <b>document</b>"
-message_downloading = "📡 Downloading file..."
+message_starting = "🚀 Starting..."
 message_progress = "☕️ Converting... {}"
 message_uploading = "☁️ Uploading to Telegram..."
 
@@ -44,6 +46,7 @@ def update_status_message(message, text):
                           message_id=message.message_id,
                           text=text, parse_mode="HTML")
 
+
 def rm(filename):
     """Delete file (like 'rm' command)"""
     try:
@@ -51,16 +54,25 @@ def rm(filename):
     except:
         pass
 
+
 def random_string(length=12):
     """Random string of uppercase ASCII and digits"""
     return "".join(random.choice(string.ascii_uppercase + string.digits) for _ in range(length))
 
+
+def download_file(request, pipe_write):
+    """Pass remote file to the local pipe"""
+    with open(pipe_write, "wb") as f:
+        for chunk in request:
+            f.write(chunk)
+
+
 def webm2mp4_worker(message, url):
     """Generic process spawned every time user sends a link or a file"""
-    filename = TEMP_FOLDER + random_string()
+    filename = TEMP_FOLDER + random_string() + ".mp4"
 
     # Tell user that we are working
-    status_message = bot.reply_to(message, message_downloading, parse_mode="HTML")
+    status_message = bot.reply_to(message, message_starting, parse_mode="HTML")
 
     # Try to download URL
     try:
@@ -72,8 +84,6 @@ def webm2mp4_worker(message, url):
     # Something went wrong on the server side
     if r.status_code != 200:
         update_status_message(status_message, error_wrong_code.format(r.status_code))
-        # Clean up
-        rm(filename+".webm")
         return
 
     # Is it a webm file?
@@ -91,20 +101,13 @@ def webm2mp4_worker(message, url):
         update_status_message(status_message, error_huge_file)
         return
 
-    # Buffered download
-    try:
-        with open(filename+".webm", "wb") as f:
-            for chunk in r:
-                f.write(chunk)
-    except:
-        update_status_message(status_message, error_downloading)
-        # Clean up
-        rm(filename+".webm")
+    # Create a pipe to pass downloading file to ffmpeg without delays
+    pipe_read, pipe_write = os.pipe()
 
     # stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL to suppress ffmpeg output
     ffmpeg_process = subprocess.Popen(["ffmpeg",
         "-threads", str(FFMPEG_THREADS),
-        "-i", filename+".webm",
+        "-i", "pipe:0", # read input from stdin
         "-map", "V:0?", # select video stream
         "-map", "0:a?", # ignore audio if doesn't exist
         "-c:v", "libx264", # specify video encoder
@@ -112,8 +115,24 @@ def webm2mp4_worker(message, url):
         "-movflags", "+faststart", # optimize for streaming
         "-preset", "slow", # https://trac.ffmpeg.org/wiki/Encode/H.264#a2.Chooseapresetandtune
         "-timelimit", "900", # prevent DoS (exit after 15 min)
-        filename+".mp4"
-    ]) 
+        filename
+    ], stdin=pipe_read)
+
+    # Download file in and pass it to ffmpeg with pipe
+    try:
+        threading.Thread(
+            target=download_file,
+            kwargs={
+                "request": r,
+                "pipe_write": pipe_write
+            }
+        ).start()
+        # Initial delay to start downloading 
+        time.sleep(2)
+    except:
+        update_status_message(status_message, error_downloading)
+        return
+
     ffmpeg_process_pid = ffmpeg_process.pid
     # While ffmpeg process is alive (i.e. is working)
     while ffmpeg_process.poll() == None:
@@ -122,35 +141,33 @@ def webm2mp4_worker(message, url):
         ffmpeg_progress = subprocess.run(["progress", "--quiet", "--pid", str(ffmpeg_process_pid)], stdout=subprocess.PIPE).stdout.decode("utf-8")
         if ffmpeg_progress == "":
             continue
-        human_readable_progress = ffmpeg_progress.split("\n")[1].strip()
+        raw_progress = ffmpeg_progress.split("\n")[1].strip()
+        human_readable_progress = "".join(raw_progress.split(" ")[1:3])[1:-2] + " / " + size(int(r.headers["Content-Length"]))
         update_status_message(status_message, message_progress.format(human_readable_progress))
 
     # Exit if ffmpeg crashed
     if ffmpeg_process.returncode != 0:
         update_status_message(status_message, error_converting)
         # Clean up
-        rm(filename+".webm")
-        rm(filename+".mp4")
+        rm(filename)
         return
 
     # Check output file size
-    mp4_size = os.path.getsize(filename+".mp4")
+    mp4_size = os.path.getsize(filename)
     if mp4_size >= MAXIMUM_FILESIZE_ALLOWED:
         update_status_message(status_message, error_huge_file)
         # Clean up
-        rm(filename+".webm")
-        rm(filename+".mp4")
+        rm(filename)
         return
 
     # Upload to Telegram
     update_status_message(status_message, message_uploading)
-    mp4 = open(filename+".mp4", "rb")
+    mp4 = open(filename, "rb")
     bot.send_video(message.chat.id, mp4, reply_to_message_id=message.message_id, supports_streaming=True)
     bot.delete_message(message.chat.id, status_message.message_id)
 
     # Clean up
-    rm(filename+".webm")
-    rm(filename+".mp4")
+    rm(filename)
 
 ### Telegram interaction below ###
 try:
@@ -172,8 +189,13 @@ URL_REGEXP = r"(http.?:\/\/.*\.webm)"
 def handle_urls(message):
     # Grab first found link
     url = re.findall(URL_REGEXP, message.text)[0]
-    new_worker = threading.Thread(target=webm2mp4_worker, kwargs={"message": message, "url": url})
-    new_worker.start()
+    threading.Thread(
+        target=webm2mp4_worker,
+        kwargs={
+            "message": message,
+            "url": url
+        }
+    ).start()
 
 # Handle files
 @bot.message_handler(content_types=["document"])
@@ -183,7 +205,12 @@ def handle_files(message):
     file_id = message.document.file_id
     file_info = bot.get_file(file_id)
     url = "https://api.telegram.org/file/bot{0}/{1}".format(telegram_token, file_info.file_path)
-    new_worker = threading.Thread(target=webm2mp4_worker, kwargs={"message": message, "url": url})
-    new_worker.start()
+    threading.Thread(
+        target=webm2mp4_worker,
+        kwargs={
+            "message": message,
+            "url": url
+        }
+    ).start()
 
 bot.polling(none_stop=True, interval=3)

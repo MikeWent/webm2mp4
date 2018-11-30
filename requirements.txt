@@ -1,3 +1,4 @@
 wheel
 pyTelegramBotAPI
 requests
+hurry.filesize
