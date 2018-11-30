@@ -57,22 +57,25 @@ def random_string(length=12):
 
 def webm2mp4_worker(message, url):
     """Generic process spawned every time user sends a link or a file"""
-    # Generate temporary 12 symbols filename 
     filename = TEMP_FOLDER + random_string()
+
     # Tell user that we are working
     status_message = bot.reply_to(message, message_downloading, parse_mode="HTML")
+
     # Try to download URL
     try:
         r = requests.get(url, stream=True, headers=HEADERS)
     except:
         update_status_message(status_message, error_downloading)
         return
+
     # Something went wrong on the server side
     if r.status_code != 200:
         update_status_message(status_message, error_wrong_code.format(r.status_code))
         # Clean up
         rm(filename+".webm")
         return
+
     # Is it a webm file?
     if r.headers["Content-Type"] != "video/webm" and message.document.mime_type != "video/webm":
         update_status_message(status_message, error_file_not_webm)
@@ -81,11 +84,13 @@ def webm2mp4_worker(message, url):
     if not "Content-Length" in r.headers or not "Content-Type" in r.headers:
         update_status_message(status_message, error_no_header)
         return
+
     # Check file size
     webm_size = int(r.headers["Content-Length"])
     if webm_size >= MAXIMUM_FILESIZE_ALLOWED: 
         update_status_message(status_message, error_huge_file)
         return
+
     # Buffered download
     try:
         with open(filename+".webm", "wb") as f:
@@ -93,6 +98,9 @@ def webm2mp4_worker(message, url):
                 f.write(chunk)
     except:
         update_status_message(status_message, error_downloading)
+        # Clean up
+        rm(filename+".webm")
+
     # stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL to suppress ffmpeg output
     ffmpeg_process = subprocess.Popen(["ffmpeg",
         "-threads", str(FFMPEG_THREADS),
@@ -110,26 +118,36 @@ def webm2mp4_worker(message, url):
     # While ffmpeg process is alive (i.e. is working)
     while ffmpeg_process.poll() == None:
         time.sleep(5)
-        # get ffmpeg progress
+        # Get ffmpeg progress
         ffmpeg_progress = subprocess.run(["progress", "--quiet", "--pid", str(ffmpeg_process_pid)], stdout=subprocess.PIPE).stdout.decode("utf-8")
         if ffmpeg_progress == "":
             continue
         human_readable_progress = ffmpeg_progress.split("\n")[1].strip()
         update_status_message(status_message, message_progress.format(human_readable_progress))
+
     # Exit if ffmpeg crashed
     if ffmpeg_process.returncode != 0:
         update_status_message(status_message, error_converting)
+        # Clean up
+        rm(filename+".webm")
+        rm(filename+".mp4")
         return
+
     # Check output file size
     mp4_size = os.path.getsize(filename+".mp4")
     if mp4_size >= MAXIMUM_FILESIZE_ALLOWED:
         update_status_message(status_message, error_huge_file)
+        # Clean up
+        rm(filename+".webm")
+        rm(filename+".mp4")
         return
+
     # Upload to Telegram
     update_status_message(status_message, message_uploading)
     mp4 = open(filename+".mp4", "rb")
     bot.send_video(message.chat.id, mp4, reply_to_message_id=message.message_id, supports_streaming=True)
     bot.delete_message(message.chat.id, status_message.message_id)
+
     # Clean up
     rm(filename+".webm")
     rm(filename+".mp4")
