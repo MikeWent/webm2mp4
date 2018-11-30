@@ -35,8 +35,8 @@ message_start = """Hello! I am WebM to MP4 (H.264) converter bot 📺
 
 You can send .webm files up to 20 MB via Telegram and receive converted videos up to ☁️ 50 MB back (from any source — link/document)."""
 message_help = "Send me a link (http://...) to <b>webm</b> file or just .webm <b>document</b>"
-message_downloading = "🌎 Downloading file..."
-message_progress = "⌛️ Converting... {}"
+message_downloading = "📡 Downloading file..."
+message_progress = "☕️ Converting... {}"
 message_uploading = "☁️ Uploading to Telegram..."
 
 def update_status_message(message, text):
