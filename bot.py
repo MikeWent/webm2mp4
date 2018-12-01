@@ -118,6 +118,7 @@ def webm2mp4_worker(message, url):
         "-movflags", "+faststart", # optimize for streaming
         "-preset", "slow", # https://trac.ffmpeg.org/wiki/Encode/H.264#a2.Chooseapresetandtune
         "-timelimit", "900", # prevent DoS (exit after 15 min)
+        "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2", # https://stackoverflow.com/questions/20847674/ffmpeg-libx264-height-not-divisible-by-2#20848224
         filename
     ], stdin=pipe_read)
 
