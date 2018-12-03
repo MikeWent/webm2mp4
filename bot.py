@@ -29,16 +29,20 @@ FFMPEG_THREADS = 4
 error_wrong_code = "❗️ Resource returned HTTP {} code. Maybe link is broken"
 error_downloading = "⚠️ Unable to download file"
 error_converting = "⚠️ Sorry, <code>ffmpeg</code> seems unable to convert this file to MP4. Please, contact @Mike_Went"
+error_generating_thumbnail = "⚠️ Sorry, <code>ffmpeg</code> seems unable to generate a thumbnail image for this file. Please, contact @Mike_Went"
 error_wrong_url = "👀 This URL does not look like a .webm file"
 error_huge_file = "🍉 File is bigger than 50 MB. Telegram <b>does not<b> allow me to upload huge files, sorry."
 error_no_header = "🔬 WTF? I do not understand what server tries to give me instead of .webm file"
 error_file_not_webm = "👀 This is not a .webm file"
+error_converting = "⚠️ Sorry, <code>ffmpeg</code> seems unable to convert this file to MP4. Please, contact @Mike_Went"
+
 message_start = """Hello! I am WebM to MP4 (H.264) converter bot 📺
 
 You can send .webm files up to 20 MB via Telegram and receive converted videos up to ☁️ 50 MB back (from any source — link/document)."""
 message_help = "Send me a link (http://...) to <b>webm</b> file or just .webm <b>document</b>"
 message_starting = "🚀 Starting..."
-message_progress = "☕️ Converting... {}"
+message_converting = "☕️ Converting... {}"
+message_generating_thumbnail = "🖼 Generating thumbnail.."
 message_uploading = "☁️ Uploading to Telegram..."
 
 def update_status_message(message, text):
@@ -72,6 +76,7 @@ def download_file(request, pipe_write):
 
 def webm2mp4_worker(message, url):
     """Generic process spawned every time user sends a link or a file"""
+    global telegram_token
     filename = TEMP_FOLDER + random_string() + ".mp4"
 
     # Tell user that we are working
@@ -132,20 +137,20 @@ def webm2mp4_worker(message, url):
             }
         ).start()
         # Initial delay to start downloading 
-        time.sleep(2)
+        time.sleep(1)
     except:
         update_status_message(status_message, error_downloading)
         return
 
     # While ffmpeg process is alive (i.e. is working)
     while ffmpeg_process.poll() == None:
-        time.sleep(3)
         output_file_size = os.stat(filename).st_size
         human_readable_progress = size(output_file_size, system=alternative) + " / " + \
                                   size(int(r.headers["Content-Length"]), system=alternative)
-        update_status_message(status_message, message_progress.format(human_readable_progress))
+        update_status_message(status_message, message_converting.format(human_readable_progress))
+        time.sleep(3)
 
-    # Exit if ffmpeg crashed
+    # Exit in case of error with ffmpeg
     if ffmpeg_process.returncode != 0:
         update_status_message(status_message, error_converting)
         # Clean up
@@ -160,14 +165,79 @@ def webm2mp4_worker(message, url):
         rm(filename)
         return
 
+    # 1. Get video duration in seconds
+    video_duration = subprocess.run(["ffprobe",
+        "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        filename
+    ], stdout=subprocess.PIPE).stdout.decode("utf-8").strip()
+    video_duration = round(float(video_duration))
+
+    # 2. Get video height and width
+    video_props = subprocess.run(["ffprobe",
+        "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries","stream=width,height",
+        "-of", "csv=s=x:p=0",
+        filename
+    ], stdout=subprocess.PIPE).stdout.decode("utf-8").strip()
+    video_width, video_height = video_props.split("x")
+
+    # 3. Take one frame from the middle of the video
+    update_status_message(status_message, message_generating_thumbnail)
+    thumbnail = TEMP_FOLDER + random_string() + ".jpg"
+    generate_thumbnail_process = subprocess.Popen(["ffmpeg",
+        "-i", filename,
+        "-vcodec", "mjpeg",
+        "-vframes", "1",
+        "-an", "-f", "rawvideo",
+        "-ss", str(int(video_duration/2)),
+        # keep the limit of 90px height/width (Telegram API) while preserving the aspect ratio
+        "-vf", "scale='if(gt(iw,ih),90,trunc(oh*a/2)*2)':'if(gt(iw,ih),trunc(ow/a/2)*2,90)'",
+        thumbnail
+    ])
+
+    # While process is alive (i.e. is working)
+    while generate_thumbnail_process.poll() == None:
+        time.sleep(1)
+
+    # Exit in case of error with ffmpeg
+    if generate_thumbnail_process.returncode != 0:
+        update_status_message(status_message, error_generating_thumbnail)
+        # Clean up
+        rm(filename)
+        rm(thumbnail)
+        return
+
     # Upload to Telegram
     update_status_message(status_message, message_uploading)
     mp4 = open(filename, "rb")
-    bot.send_video(message.chat.id, mp4, reply_to_message_id=message.message_id, supports_streaming=True)
+    thumb = open(thumbnail, "rb")
+    r = requests.post(
+        f"https://api.telegram.org/bot{telegram_token}/sendVideo",
+        data={
+            "chat_id": message.chat.id,
+            "duration": video_duration,
+            "width": video_width,
+            "height": video_height,
+            "reply_to_message_id": message.message_id,
+            "supports_streaming": True
+        },
+        files=[
+            ("video", (random_string()+".mp4", mp4, "video/mp4")),
+            ("thumb", (random_string()+".jpg", thumb, "image/jpeg"))
+        ]
+    )
     bot.delete_message(message.chat.id, status_message.message_id)
 
     # Clean up
+    mp4.close()
+    thumb.close()
     rm(filename)
+    rm(thumbnail)
+
 
 ### Telegram interaction below ###
 try:
@@ -213,4 +283,4 @@ def handle_files(message):
         }
     ).start()
 
-bot.polling(none_stop=True, interval=3)
+bot.polling(none_stop=True)
