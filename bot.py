@@ -77,7 +77,7 @@ def download_file(request, pipe_write):
 def webm2mp4_worker(message, url):
     """Generic process spawned every time user sends a link or a file"""
     global telegram_token
-    filename = TEMP_FOLDER + random_string() + ".mp4"
+    filename = "".join([TEMP_FOLDER, random_string(), ".mp4"])
 
     # Tell user that we are working
     status_message = bot.reply_to(message, message_starting, parse_mode="HTML")
@@ -105,15 +105,16 @@ def webm2mp4_worker(message, url):
 
     # Check file size
     webm_size = int(r.headers["Content-Length"])
-    if webm_size >= MAXIMUM_FILESIZE_ALLOWED: 
+    if webm_size >= MAXIMUM_FILESIZE_ALLOWED:
         update_status_message(status_message, error_huge_file)
         return
 
     # Create a pipe to pass downloading file to ffmpeg without delays
     pipe_read, pipe_write = os.pipe()
 
-    # stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL to suppress ffmpeg output
+    # Start ffmpeg
     ffmpeg_process = subprocess.Popen(["ffmpeg",
+        "-v", "error",
         "-threads", str(FFMPEG_THREADS),
         "-i", "pipe:0", # read input from stdin
         "-map", "V:0?", # select video stream
@@ -140,30 +141,44 @@ def webm2mp4_worker(message, url):
         time.sleep(1)
     except:
         update_status_message(status_message, error_downloading)
+        # Close pipe explicitly
+        os.close(pipe_read)
         return
 
     # While ffmpeg process is alive (i.e. is working)
+    old_progress = ""
     while ffmpeg_process.poll() == None:
-        output_file_size = os.stat(filename).st_size
-        human_readable_progress = size(output_file_size, system=alternative) + " / " + \
-                                  size(int(r.headers["Content-Length"]), system=alternative)
-        update_status_message(status_message, message_converting.format(human_readable_progress))
+        try:
+            output_file_size = os.stat(filename).st_size
+        except FileNotFoundError:
+            output_file_size = 0
+        mp4_size = size(output_file_size, system=alternative)
+        webm_size = size(int(r.headers["Content-Length"]), system=alternative)
+        human_readable_progress = " ".join([mp4_size, "/", webm_size])
+        if human_readable_progress != old_progress:
+            update_status_message(status_message, message_converting.format(human_readable_progress))
+            old_prpgress = human_readable_progress
         time.sleep(3)
 
     # Exit in case of error with ffmpeg
     if ffmpeg_process.returncode != 0:
         update_status_message(status_message, error_converting)
-        # Clean up
+        # Clean up and close pipe explicitly
         rm(filename)
+        os.close(pipe_read)
         return
 
     # Check output file size
     mp4_size = os.path.getsize(filename)
     if mp4_size >= MAXIMUM_FILESIZE_ALLOWED:
         update_status_message(status_message, error_huge_file)
-        # Clean up
+        # Clean up and close pipe explicitly
         rm(filename)
+        os.close(pipe_read)
         return
+
+    # Close pipe after using
+    os.close(pipe_read)
 
     # 1. Get video duration in seconds
     video_duration = subprocess.run(["ffprobe",
@@ -187,8 +202,9 @@ def webm2mp4_worker(message, url):
 
     # 3. Take one frame from the middle of the video
     update_status_message(status_message, message_generating_thumbnail)
-    thumbnail = TEMP_FOLDER + random_string() + ".jpg"
+    thumbnail = "".join([TEMP_FOLDER, random_string(), ".jpg"])
     generate_thumbnail_process = subprocess.Popen(["ffmpeg",
+        "-v", "error",
         "-i", filename,
         "-vcodec", "mjpeg",
         "-vframes", "1",
@@ -215,7 +231,7 @@ def webm2mp4_worker(message, url):
     update_status_message(status_message, message_uploading)
     mp4 = open(filename, "rb")
     thumb = open(thumbnail, "rb")
-    r = requests.post(
+    requests.post(
         f"https://api.telegram.org/bot{telegram_token}/sendVideo",
         data={
             "chat_id": message.chat.id,
@@ -248,10 +264,12 @@ except FileNotFoundError:
     exit(1)
 bot = telebot.TeleBot(telegram_token)
 
+
 @bot.message_handler(commands=["start", "help"])
 def start_help(message):
     bot.send_message(message.chat.id, message_start, parse_mode="HTML")
     bot.send_message(message.chat.id, message_help, parse_mode="HTML")
+
 
 # Handle URLs
 URL_REGEXP = r"(http.?:\/\/.*\.webm)"
@@ -282,5 +300,6 @@ def handle_files(message):
             "url": url
         }
     ).start()
+
 
 bot.polling(none_stop=True)
