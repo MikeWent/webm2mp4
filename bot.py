@@ -33,7 +33,7 @@ error_generating_thumbnail = "⚠️ Sorry, <code>ffmpeg</code> seems unable to 
 error_wrong_url = "👀 This URL does not look like a .webm file"
 error_huge_file = "🍉 File is bigger than 50 MB. Telegram <b>does not<b> allow me to upload huge files, sorry."
 error_no_header = "🔬 WTF? I do not understand what server tries to give me instead of .webm file"
-error_file_not_webm = "👀 This is not a .webm file"
+error_file_not_webm = "👀 This is not a .webm file. If you are sure it's an error, contact @Mike_Went"
 error_converting = "⚠️ Sorry, <code>ffmpeg</code> seems unable to convert this file to MP4. Please, contact @Mike_Went"
 
 message_start = """Hello! I am WebM to MP4 (H.264) converter bot 📺
@@ -95,7 +95,8 @@ def webm2mp4_worker(message, url):
         return
 
     # Is it a webm file?
-    if r.headers["Content-Type"] != "video/webm" and message.document.mime_type != "video/webm":
+    allowed_mimes = ["video/webm", "application/octet-stream"]
+    if r.headers["Content-Type"] not in allowed_mimes and message.document.mime_type not in allowed_mimes:
         update_status_message(status_message, error_file_not_webm)
         return
     # Can't determine file size
@@ -288,9 +289,6 @@ def handle_urls(message):
 # Handle files
 @bot.message_handler(content_types=["document"])
 def handle_files(message):
-    if message.document.mime_type  not in ["video/webm", "application/octet-stream"]:
-        bot.send_message(message.chat.id, error_file_not_webm, parse_mode="HTML")
-        return
     file_id = message.document.file_id
     file_info = bot.get_file(file_id)
     url = "https://api.telegram.org/file/bot{0}/{1}".format(telegram_token, file_info.file_path)
