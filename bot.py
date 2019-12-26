@@ -23,7 +23,8 @@ HEADERS = {
     "Accept-Encoding": "identity"
 }
 MAXIMUM_FILESIZE_ALLOWED = 50*1024*1024 # ~50 MB
-FFMPEG_THREADS = 4
+ALLOWED_MIME_TYPES = ("video/webm", "application/octet-stream")
+FFMPEG_THREADS = 2
 
 # MESSAGES
 error_wrong_code = "❗️ Resource returned HTTP {} code. Maybe link is broken"
@@ -95,8 +96,8 @@ def webm2mp4_worker(message, url):
         return
 
     # Is it a webm file?
-    allowed_mimes = ["video/webm", "application/octet-stream"]
-    if r.headers["Content-Type"] not in allowed_mimes and message.document.mime_type not in allowed_mimes:
+    
+    if r.headers["Content-Type"] not in ALLOWED_MIME_TYPES and message.document.mime_type not in ALLOWED_MIME_TYPES:
         update_status_message(status_message, error_file_not_webm)
         return
     # Can't determine file size
@@ -291,6 +292,10 @@ def handle_urls(message):
 def handle_files(message):
     file_id = message.document.file_id
     file_info = bot.get_file(file_id)
+    if message.document.mime_type not in ALLOWED_MIME_TYPES:
+        if message.chat.type == "private":
+            bot.reply_to(message, error_file_not_webm, parse_mode="HTML")
+        return
     url = "https://api.telegram.org/file/bot{0}/{1}".format(telegram_token, file_info.file_path)
     threading.Thread(
         target=webm2mp4_worker,
