@@ -200,7 +200,8 @@ def handle_urls(message):
 # Handle files
 @bot.message_handler(content_types=["document"])
 def handle_files(message):
-    if message.document.mime_type != "video/webm":
+    if message.document.mime_type  not in ["video/webm", "application/octet-stream"]:
+        bot.send_message(message.chat.id, error_file_not_webm, parse_mode="HTML")
         return
     file_id = message.document.file_id
     file_info = bot.get_file(file_id)
