@@ -24,7 +24,7 @@ HEADERS = {
 }
 MAXIMUM_FILESIZE_ALLOWED = 50*1024*1024 # ~50 MB
 ALLOWED_MIME_TYPES_VIDEO = ("video/webm", "application/octet-stream")
-ALLOWED_MIME_TYPES_IMAGE = ("image/webp")
+ALLOWED_MIME_TYPES_IMAGE = ("image/webp", "application/octet-stream")
 FFMPEG_THREADS = 2
 
 # MESSAGES
@@ -280,7 +280,6 @@ def webp2jpg_worker(message, url):
         return
 
     # Is it a webp file?
-    
     if r.headers["Content-Type"] not in ALLOWED_MIME_TYPES_IMAGE and message.document.mime_type not in ALLOWED_MIME_TYPES_IMAGE:
         update_status_message(status_message, error_file_not_webp)
         return
@@ -295,34 +294,15 @@ def webp2jpg_worker(message, url):
         update_status_message(status_message, error_huge_file)
         return
 
-    # Create a pipe to pass downloading file to ffmpeg without delays
-    pipe_read, pipe_write = os.pipe()
-
     # Start ffmpeg
     ffmpeg_process = subprocess.Popen(["ffmpeg",
         "-v", "error",
         "-threads", str(FFMPEG_THREADS),
-        "-i", "pipe:0", # read input from stdin
+        "-thread_type", "slice",
+        "-i", url, # allow ffmpeg to download image by itself
         "-timelimit", "60", # prevent DoS (exit after 15 min)
         filename
-    ], stdin=pipe_read)
-
-    # Download file in and pass it to ffmpeg with pipe
-    try:
-        threading.Thread(
-            target=download_file,
-            kwargs={
-                "request": r,
-                "pipe_write": pipe_write
-            }
-        ).start()
-        # Initial delay to start downloading 
-        time.sleep(1)
-    except:
-        update_status_message(status_message, error_downloading)
-        # Close pipe explicitly
-        os.close(pipe_read)
-        return
+    ])
 
     # While ffmpeg process is alive (i.e. is working)
     old_progress = ""
@@ -344,7 +324,6 @@ def webp2jpg_worker(message, url):
         update_status_message(status_message, error_converting_webp)
         # Clean up and close pipe explicitly
         rm(filename)
-        os.close(pipe_read)
         return
 
     # Check output file size
@@ -353,11 +332,7 @@ def webp2jpg_worker(message, url):
         update_status_message(status_message, error_huge_file)
         # Clean up and close pipe explicitly
         rm(filename)
-        os.close(pipe_read)
         return
-
-    # Close pipe after using
-    os.close(pipe_read)
 
     # Upload to Telegram
     update_status_message(status_message, message_uploading)
@@ -375,8 +350,12 @@ def webp2jpg_worker(message, url):
     bot.delete_message(message.chat.id, status_message.message_id)
 
     # Clean up
-    jpg.close()
+    image.close()
     rm(filename)
+
+def report_unsupported_file(message):
+    if message.chat.type == "private":
+        bot.reply_to(message, error_file_not_supported, parse_mode="HTML")
 
 ### Telegram interaction below ###
 try:
@@ -399,11 +378,21 @@ URL_REGEXP = r"(http.?:\/\/.*\.(webm|webp))"
 @bot.message_handler(regexp=URL_REGEXP)
 def handle_urls(message):
     # Grab first found link
-    url = re.findall(URL_REGEXP, message.text)[0]
-    if url.endswith("webm"):
+    try:
+        match = re.findall(URL_REGEXP, message.text)[0]
+        url = match[0]
+        extension = match[1]
+    except:
+        report_unsupported_file(message)
+        return
+
+    if extension == "webm":
         worker = webm2mp4_worker
-    elif url.endswith("webp"):
+    elif extension == "webp":
         worker = webp2jpg_worker
+    else:
+        report_unsupported_file(message)
+        return
 
     threading.Thread(
         target=worker,
@@ -418,15 +407,18 @@ def handle_urls(message):
 def handle_files(message):
     file_id = message.document.file_id
     file_info = bot.get_file(file_id)
-    if message.document.mime_type not in (ALLOWED_MIME_TYPES_VIDEO + ALLOWED_MIME_TYPES_IMAGE):
-        if message.chat.type == "private":
-            bot.reply_to(message, error_file_not_supported, parse_mode="HTML")
+    if message.document.mime_type not in ALLOWED_MIME_TYPES_VIDEO and message.document.mime_type not in ALLOWED_MIME_TYPES_IMAGE:
+        report_unsupported_file(message)
         return
     url = "https://api.telegram.org/file/bot{0}/{1}".format(telegram_token, file_info.file_path)
     if url.endswith("webm"):
         worker = webm2mp4_worker
     elif url.endswith("webp"):
         worker = webp2jpg_worker
+    else:
+        report_unsupported_file(message)
+        return
+
     threading.Thread(
         target=worker,
         kwargs={
