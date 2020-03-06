@@ -30,18 +30,20 @@ FFMPEG_THREADS = 2
 # MESSAGES
 error_wrong_code = "❗️ Resource returned HTTP {} code. Maybe link is broken"
 error_downloading = "⚠️ Unable to download file"
-error_converting = "⚠️ Sorry, <code>ffmpeg</code> seems unable to convert this file to MP4. Please, contact @Mike_Went"
+error_converting_webm = "⚠️ Sorry, <code>ffmpeg</code> seems unable to convert this file to MP4. Please, contact @Mike_Went"
+error_converting_webp = "⚠️ Sorry, <code>ffmpeg</code> seems unable to convert this file to JPG. Please, contact @Mike_Went"
 error_generating_thumbnail = "⚠️ Sorry, <code>ffmpeg</code> seems unable to generate a thumbnail image for this file. Please, contact @Mike_Went"
-error_wrong_url = "👀 This URL does not look like a .webm file"
 error_huge_file = "🍉 File is bigger than 50 MB. Telegram <b>does not<b> allow me to upload huge files, sorry."
-error_no_header = "🔬 WTF? I do not understand what server tries to give me instead of .webm file"
+error_no_header_webm = "🔬 WTF? I do not understand what server tries to give me instead of .webm file"
+error_no_header_webp = "🔬 WTF? I do not understand what server tries to give me instead of .webp file"
 error_file_not_webm = "👀 This is not a .webm file. If you are sure it's an error, contact @Mike_Went"
-error_converting = "⚠️ Sorry, <code>ffmpeg</code> seems unable to convert this file to MP4. Please, contact @Mike_Went"
+error_file_not_webp = "👀 This is not a .webp file. If you are sure it's an error, contact @Mike_Went"
+error_file_not_supported = "👀 This file is not supported. Supported files are: webm, webp. If you are sure it's an error, contact @Mike_Went"
 
-message_start = """Hello! I am WebM to MP4 (H.264) converter bot 📺
+message_start = """Hello! I am WebM to MP4 (H.264) and WebP to JPG converter bot 📺
 
-You can send .webm files up to 20 MB via Telegram and receive converted videos up to ☁️ 50 MB back (from any source — link/document)."""
-message_help = "Send me a link (http://...) to <b>webm</b> file or just .webm <b>document</b>"
+You can send .webm files up to 20 MB via Telegram and receive converted videos up to ☁️ 50 MB back (from any source — link/document). Or you can send .webp files and receive converted images (non-animated) within the same size constraints."""
+message_help = "Send me a link (http://...) to <b>webm</b> or <b>webp</b> file or just .webm or .webp <b>document</b>"
 message_starting = "🚀 Starting..."
 message_converting = "☕️ Converting... {}"
 message_generating_thumbnail = "🖼 Generating thumbnail.."
@@ -103,7 +105,7 @@ def webm2mp4_worker(message, url):
         return
     # Can't determine file size
     if not "Content-Length" in r.headers or not "Content-Type" in r.headers:
-        update_status_message(status_message, error_no_header)
+        update_status_message(status_message, error_no_header_webm)
         return
 
     # Check file size
@@ -165,7 +167,7 @@ def webm2mp4_worker(message, url):
 
     # Exit in case of error with ffmpeg
     if ffmpeg_process.returncode != 0:
-        update_status_message(status_message, error_converting)
+        update_status_message(status_message, error_converting_webm)
         # Clean up and close pipe explicitly
         rm(filename)
         os.close(pipe_read)
@@ -280,11 +282,11 @@ def webp2jpg_worker(message, url):
     # Is it a webp file?
     
     if r.headers["Content-Type"] not in ALLOWED_MIME_TYPES_IMAGE and message.document.mime_type not in ALLOWED_MIME_TYPES_IMAGE:
-        update_status_message(status_message, error_file_not_webm)
+        update_status_message(status_message, error_file_not_webp)
         return
     # Can't determine file size
     if not "Content-Length" in r.headers or not "Content-Type" in r.headers:
-        update_status_message(status_message, error_no_header)
+        update_status_message(status_message, error_no_header_webp)
         return
 
     # Check file size
@@ -339,7 +341,7 @@ def webp2jpg_worker(message, url):
 
     # Exit in case of error with ffmpeg
     if ffmpeg_process.returncode != 0:
-        update_status_message(status_message, error_converting)
+        update_status_message(status_message, error_converting_webp)
         # Clean up and close pipe explicitly
         rm(filename)
         os.close(pipe_read)
@@ -418,7 +420,7 @@ def handle_files(message):
     file_info = bot.get_file(file_id)
     if message.document.mime_type not in (ALLOWED_MIME_TYPES_VIDEO + ALLOWED_MIME_TYPES_IMAGE):
         if message.chat.type == "private":
-            bot.reply_to(message, error_file_not_webm, parse_mode="HTML")
+            bot.reply_to(message, error_file_not_supported, parse_mode="HTML")
         return
     url = "https://api.telegram.org/file/bot{0}/{1}".format(telegram_token, file_info.file_path)
     if url.endswith("webm"):
