@@ -23,7 +23,7 @@ HEADERS = {
     "Accept-Encoding": "identity"
 }
 MAXIMUM_FILESIZE_ALLOWED = 50*1024*1024 # ~50 MB
-ALLOWED_MIME_TYPES = ("video/webm", "application/octet-stream")
+ALLOWED_MIME_TYPES = ("video/webm", "application/octet-stream", "image/gif")
 FFMPEG_THREADS = 2
 
 # MESSAGES
@@ -49,8 +49,8 @@ message_uploading = "☁️ Uploading to Telegram..."
 def update_status_message(message, text):
     try:
         bot.edit_message_text(chat_id=message.chat.id,
-                          message_id=message.message_id,
-                          text=text, parse_mode="HTML")
+                              message_id=message.message_id,
+                              text=text, parse_mode="HTML")
     except:
         pass
 
@@ -96,10 +96,10 @@ def webm2mp4_worker(message, url):
         return
 
     # Is it a webm file?
-    
     if r.headers["Content-Type"] not in ALLOWED_MIME_TYPES and message.document.mime_type not in ALLOWED_MIME_TYPES:
         update_status_message(status_message, error_file_not_webm)
         return
+
     # Can't determine file size
     if not "Content-Length" in r.headers or not "Content-Type" in r.headers:
         update_status_message(status_message, error_no_header)
