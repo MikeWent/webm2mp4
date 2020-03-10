@@ -23,7 +23,7 @@ HEADERS = {
     "Accept-Encoding": "identity"
 }
 MAXIMUM_FILESIZE_ALLOWED = 50*1024*1024 # ~50 MB
-ALLOWED_MIME_TYPES_VIDEO = ("video/webm", "application/octet-stream")
+ALLOWED_MIME_TYPES_VIDEO = ("video/webm", "application/octet-stream", "image/gif")
 ALLOWED_MIME_TYPES_IMAGE = ("image/webp", "application/octet-stream")
 FFMPEG_THREADS = 2
 
@@ -52,8 +52,8 @@ message_uploading = "☁️ Uploading to Telegram..."
 def update_status_message(message, text):
     try:
         bot.edit_message_text(chat_id=message.chat.id,
-                          message_id=message.message_id,
-                          text=text, parse_mode="HTML")
+                              message_id=message.message_id,
+                              text=text, parse_mode="HTML")
     except:
         pass
 
