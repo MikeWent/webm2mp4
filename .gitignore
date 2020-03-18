@@ -102,3 +102,6 @@ ENV/
 
 # Telegram bot token
 token.txt
+
+# Generated service file
+*.service
