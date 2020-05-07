@@ -23,7 +23,7 @@ HEADERS = {
     "Accept-Encoding": "identity"
 }
 MAXIMUM_FILESIZE_ALLOWED = 50*1024*1024 # ~50 MB
-ALLOWED_MIME_TYPES_VIDEO = ("video/webm", "application/octet-stream", "image/gif")
+ALLOWED_MIME_TYPES_VIDEO = ("video/webm", "video/mp4", "application/octet-stream", "image/gif")
 ALLOWED_MIME_TYPES_IMAGE = ("image/webp", "application/octet-stream")
 FFMPEG_THREADS = 2
 
@@ -374,7 +374,7 @@ def start_help(message):
 
 
 # Handle URLs
-URL_REGEXP = r"(http.?:\/\/.*\.(webm|webp))"
+URL_REGEXP = r"(http.?:\/\/.*\.(mp4|webm|webp))"
 @bot.message_handler(regexp=URL_REGEXP)
 def handle_urls(message):
     # Grab first found link
@@ -387,6 +387,8 @@ def handle_urls(message):
         return
 
     if extension == "webm":
+        worker = webm2mp4_worker
+    elif extension == "mp4":
         worker = webm2mp4_worker
     elif extension == "webp":
         worker = webp2jpg_worker
@@ -402,7 +404,7 @@ def handle_urls(message):
         }
     ).start()
 
-# Handle files
+# Handle webm files
 @bot.message_handler(content_types=["document"])
 def handle_files(message):
     file_id = message.document.file_id
@@ -412,6 +414,31 @@ def handle_files(message):
         return
     url = "https://api.telegram.org/file/bot{0}/{1}".format(telegram_token, file_info.file_path)
     if url.endswith("webm"):
+        worker = webm2mp4_worker
+    elif url.endswith("webp"):
+        worker = webp2jpg_worker
+    else:
+        report_unsupported_file(message)
+        return
+
+    threading.Thread(
+        target=worker,
+        kwargs={
+            "message": message,
+            "url": url
+        }
+    ).start()
+
+# Handle mp4 files
+@bot.message_handler(content_types=["video"])
+def handle_files(message):
+    file_id = message.video.file_id
+    file_info = bot.get_file(file_id)
+    if message.video.mime_type not in ALLOWED_MIME_TYPES_VIDEO and message.video.mime_type not in ALLOWED_MIME_TYPES_IMAGE:
+        report_unsupported_file(message)
+        return
+    url = "https://api.telegram.org/file/bot{0}/{1}".format(telegram_token, file_info.file_path)
+    if url.endswith("mp4"):
         worker = webm2mp4_worker
     elif url.endswith("webp"):
         worker = webp2jpg_worker
