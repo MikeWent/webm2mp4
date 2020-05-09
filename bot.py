@@ -23,7 +23,7 @@ HEADERS = {
     "Accept-Encoding": "identity"
 }
 MAXIMUM_FILESIZE_ALLOWED = 50*1024*1024 # ~50 MB
-ALLOWED_MIME_TYPES_VIDEO = ("video/webm", "application/octet-stream", "image/gif")
+ALLOWED_MIME_TYPES_VIDEO = ("video/webm", "video/mp4", "application/octet-stream", "image/gif")
 ALLOWED_MIME_TYPES_IMAGE = ("image/webp", "application/octet-stream")
 FFMPEG_THREADS = 2
 
@@ -162,7 +162,7 @@ def webm2mp4_worker(message, url):
         human_readable_progress = " ".join([mp4_size, "/", webm_size])
         if human_readable_progress != old_progress:
             update_status_message(status_message, message_converting.format(human_readable_progress))
-            old_prpgress = human_readable_progress
+            old_progress = human_readable_progress
         time.sleep(3)
 
     # Exit in case of error with ffmpeg
@@ -316,7 +316,7 @@ def webp2jpg_worker(message, url):
         human_readable_progress = " ".join([output_size, "/", input_size])
         if human_readable_progress != old_progress:
             update_status_message(status_message, message_converting.format(human_readable_progress))
-            old_prpgress = human_readable_progress
+            old_progress = human_readable_progress
         time.sleep(3)
 
     # Exit in case of error with ffmpeg
@@ -374,7 +374,7 @@ def start_help(message):
 
 
 # Handle URLs
-URL_REGEXP = r"(http.?:\/\/.*\.(webm|webp))"
+URL_REGEXP = r"(http.?:\/\/.*\.(webm|webp|mp4))"
 @bot.message_handler(regexp=URL_REGEXP)
 def handle_urls(message):
     # Grab first found link
@@ -386,7 +386,7 @@ def handle_urls(message):
         report_unsupported_file(message)
         return
 
-    if extension == "webm":
+    if extension in ("webm", "mp4"):
         worker = webm2mp4_worker
     elif extension == "webp":
         worker = webp2jpg_worker
@@ -411,7 +411,7 @@ def handle_files(message):
         report_unsupported_file(message)
         return
     url = "https://api.telegram.org/file/bot{0}/{1}".format(telegram_token, file_info.file_path)
-    if url.endswith("webm"):
+    if url.endswith("webm") or url.endswith("mp4"):
         worker = webm2mp4_worker
     elif url.endswith("webp"):
         worker = webp2jpg_worker
