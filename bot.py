@@ -405,7 +405,7 @@ def handle_urls(message):
 # Handle files
 @bot.message_handler(content_types=["document", "video"])
 def handle_files(message):
-    file_id = message.document.file_id
+    file_id = message.document.file_id if message.document.file_id else message.video.file_id
     file_info = bot.get_file(file_id)
     if message.document.mime_type not in ALLOWED_MIME_TYPES_VIDEO and message.document.mime_type not in ALLOWED_MIME_TYPES_IMAGE:
         report_unsupported_file(message)
