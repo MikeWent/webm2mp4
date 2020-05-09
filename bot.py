@@ -403,7 +403,7 @@ def handle_urls(message):
     ).start()
 
 # Handle files
-@bot.message_handler(content_types=["document"])
+@bot.message_handler(content_types=["document", "video"])
 def handle_files(message):
     file_id = message.document.file_id
     file_info = bot.get_file(file_id)
