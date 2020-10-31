@@ -10,6 +10,7 @@ import string
 import subprocess
 import threading
 import time
+import json
 
 import requests
 import telebot
@@ -25,7 +26,6 @@ HEADERS = {
 MAXIMUM_FILESIZE_ALLOWED = 50*1024*1024 # ~50 MB
 ALLOWED_MIME_TYPES_VIDEO = ("video/webm", "video/mp4", "application/octet-stream", "image/gif")
 ALLOWED_MIME_TYPES_IMAGE = ("image/webp", "application/octet-stream")
-FFMPEG_THREADS = 2
 
 # MESSAGES
 error_wrong_code = "❗️ Resource returned HTTP {} code. Maybe link is broken"
@@ -48,6 +48,23 @@ message_starting = "🚀 Starting..."
 message_converting = "☕️ Converting... {}"
 message_generating_thumbnail = "🖼 Generating thumbnail.."
 message_uploading = "☁️ Uploading to Telegram..."
+
+config = {}
+try:
+    with open("config.json", "r") as f:
+        config = json.load(f)
+except FileNotFoundError:
+    with open("config.json", "w") as f:
+        config = {"telegram_token": None, "ffmpeg_threads": 2}
+        json.dump(config, f, indent=4)             
+except:
+    print("Unable to parse config.json, is it corrupted?")
+    exit(1)
+
+if not config.get("telegram_token"):
+    print("PLease specify Telegram bot token in config.json")
+    exit(1)
+
 
 def update_status_message(message, text):
     try:
@@ -120,7 +137,7 @@ def webm2mp4_worker(message, url):
     # Start ffmpeg
     ffmpeg_process = subprocess.Popen(["ffmpeg",
         "-v", "error",
-        "-threads", str(FFMPEG_THREADS),
+        "-threads", str(config["ffmpeg_threads"]),
         "-i", "pipe:0", # read input from stdin
         "-map", "V:0?", # select video stream
         "-map", "0:a?", # ignore audio if doesn't exist
@@ -297,7 +314,7 @@ def webp2jpg_worker(message, url):
     # Start ffmpeg
     ffmpeg_process = subprocess.Popen(["ffmpeg",
         "-v", "error",
-        "-threads", str(FFMPEG_THREADS),
+        "-threads", str(config["ffmpeg_threads"]),
         "-thread_type", "slice",
         "-i", url, # allow ffmpeg to download image by itself
         "-timelimit", "60", # prevent DoS (exit after 15 min)
@@ -358,12 +375,7 @@ def report_unsupported_file(message):
         bot.reply_to(message, error_file_not_supported, parse_mode="HTML")
 
 ### Telegram interaction below ###
-try:
-    with open("token.txt", "r") as f:
-        telegram_token = f.read().strip()
-except FileNotFoundError:
-    print("Put your Telegram bot token to 'token.txt' file")
-    exit(1)
+telegram_token = config["telegram_token"]
 bot = telebot.TeleBot(telegram_token)
 
 

@@ -100,8 +100,8 @@ ENV/
 # mypy
 .mypy_cache/
 
-# Telegram bot token
-token.txt
+# Bot config
+config.json
 
 # Generated service file
 *.service
