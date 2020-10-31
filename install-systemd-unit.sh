@@ -21,7 +21,7 @@ WorkingDirectory=$PWD
 [Install]
 WantedBy=multi-user.target" > $name.service
 
-sudo mv $name.service /lib/systemd/system/
+sudo mv $name.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable "$name.service"
 sudo systemctl start "$name.service"
