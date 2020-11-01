@@ -72,15 +72,12 @@ if not config.get("telegram_token"):
 
 
 def update_status_message(message, text):
-    try:
-        bot.edit_message_text(
-            chat_id=message.chat.id,
-            message_id=message.message_id,
-            text=text,
-            parse_mode="HTML",
-        )
-    except:
-        pass
+    bot.edit_message_text(
+        chat_id=message.chat.id,
+        message_id=message.message_id,
+        text=text,
+        parse_mode="HTML",
+    )
 
 
 def rm(filename):
@@ -168,7 +165,7 @@ def convert_worker(target_format, message, url, config, bot):
 
     # While ffmpeg process is alive (i.e. is working)
     old_progress = ""
-    while not ffmpeg_process.poll():
+    while ffmpeg_process.poll() == None:
         try:
             raw_output_size = os.stat(filename).st_size
         except FileNotFoundError:
@@ -211,38 +208,32 @@ def convert_worker(target_format, message, url, config, bot):
 
     if target_format == "mp4":
         # 1. Get video duration in seconds
-        video_duration = (
-            subprocess.run(
-                [
-                    "ffprobe", "-v", "error",
-                    "-select_streams", "v:0",
-                    "-show_entries", "format=duration",
-                    "-of", "default=noprint_wrappers=1:nokey=1",
-                    filename,
-                ],
-                stdout=subprocess.PIPE,
-            )
-            .stdout.decode("utf-8")
-            .strip()
-        )
+        video_duration = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-select_streams", "v:0",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                filename,
+            ],
+            stdout=subprocess.PIPE,
+        ).stdout.decode("utf-8").strip()
+
         video_duration = round(float(video_duration))
         data.update({"duration": video_duration})
 
         # 2. Get video height and width
-        video_props = (
-            subprocess.run(
-                [
-                    "ffprobe", "-v", "error",
-                    "-select_streams", "v:0",
-                    "-show_entries", "stream=width,height",
-                    "-of", "csv=s=x:p=0",
-                    filename,
-                ],
-                stdout=subprocess.PIPE,
-            )
-            .stdout.decode("utf-8")
-            .strip()
-        )
+        video_props = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=width,height",
+                "-of", "csv=s=x:p=0",
+                filename,
+            ],
+            stdout=subprocess.PIPE,
+        ).stdout.decode("utf-8").strip()
+
         video_width, video_height = video_props.split("x")
         data.update({"width": video_width, "height": video_height})
 
