@@ -52,7 +52,7 @@ def convert_worker(target_format, message, url, config, bot):
     raw_input_size = 0
     try:
         with open(input_filename, "wb") as f:
-            for chunk in r.iter_content(chunk_size=chunk_size): 
+            for chunk in r.iter_content(chunk_size=chunk_size):
                 f.write(chunk)
                 raw_input_size += chunk_size
                 # Download files without Content-Length, but apply standard limit to them
@@ -64,7 +64,7 @@ def convert_worker(target_format, message, url, config, bot):
         update_status_message(text.error.downloading)
         bot.reply_to(message, f"HTTP {r.status_code}")
         return
-    
+
     # Start ffmpeg
     ffmpeg_process = None
     if target_format == "mp4":
@@ -103,12 +103,12 @@ def convert_worker(target_format, message, url, config, bot):
             raw_output_size =  utils.filesize(output_filename)
         except FileNotFoundError:
             raw_output_size = 0
-        
+
         if raw_output_size >= MAXIMUM_FILESIZE_ALLOWED:
             update_status_message(text.error.huge_file)
             ffmpeg_process.kill()
             utils.rm(output_filename)
-        
+
         input_size = bytes2human(raw_input_size)
         output_size = bytes2human(raw_output_size)
 
@@ -250,7 +250,7 @@ def handle_urls(message):
         except:
             pass
         return
-    
+
     # Get first url in message
     match = re.findall(URL_REGEXP, message.text)[0]
     url = match[0]
@@ -259,6 +259,7 @@ def handle_urls(message):
         target_format = "png"
     else:
         target_format = "mp4"
+
     threading.Thread(target=convert_worker, kwargs={"target_format": target_format, "message": message, "url": url, "config": config, "bot": bot}).run()
 
 # Handle files
@@ -270,8 +271,6 @@ def handle_files(message):
         except:
             pass
         return
-
-   
 
     # Get file url
     target = None
@@ -291,7 +290,7 @@ def handle_files(message):
         target_format = "png"
     else:
         target_format = "mp4"
-    
+
     threading.Thread(target=convert_worker, kwargs={"target_format": target_format, "message": message, "url": url, "config": config, "bot": bot}).run()
 
 
