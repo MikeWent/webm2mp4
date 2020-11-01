@@ -35,6 +35,7 @@ class Message:
 You can send .webm files up to 20 MB via Telegram and receive converted videos up to ☁️ 50 MB back (from any source — link/document). Or you can send .webp files and receive converted jpg image"""
     help = "Send me a link (http://...) to <b>webm</b> or <b>webp</b> file or just .webm or .webp <b>document</b>"
     starting = "🚀 Starting..."
+    downloading = "📥 Downloading..."
     converting = "☕️ Converting... {}"
     generating_thumbnail = "🖼 Generating thumbnail.."
     uploading = "☁️ Uploading to Telegram..."
@@ -80,10 +81,10 @@ def update_status_message(message, text):
     )
 
 
-def rm(filename):
+def rm(output_filename):
     """Delete file (like 'rm' command)"""
     try:
-        os.remove(filename)
+        os.remove(output_filename)
     except:
         pass
 
@@ -97,7 +98,8 @@ def random_string(length=12):
 
 def convert_worker(target_format, message, url, config, bot):
     """Generic process spawned every time user sends a link or a file"""
-    filename = "".join([config["temp_path"], random_string(), "." + target_format])
+    input_filename = "".join([config["temp_path"], random_string()])
+    output_filename = "".join([config["temp_path"], random_string(), ".", target_format])
 
     # Tell user that we are working
     status_message = bot.reply_to(message, Message.starting, parse_mode="HTML")
@@ -132,14 +134,24 @@ def convert_worker(target_format, message, url, config, bot):
         update_status_message(status_message, ErrorMessage.huge_file)
         return
 
+    # Download the file
+    update_status_message(status_message, Message.downloading)
+    try:
+        with open(input_filename, "wb") as f:
+            for chunk in r.iter_content(chunk_size=4096): 
+                f.write(chunk)
+    except:
+        update_status_message(status_message, ErrorMessage.downloading)
+        return
+    
     # Start ffmpeg
     ffmpeg_process = None
     if target_format == "mp4":
         ffmpeg_process = subprocess.Popen(
             [
-                "ffmpeg", "-v", "error",
+                "ffmpeg", "-v", "error", "-hwaccel",
                 "-threads", str(config["ffmpeg_threads"]),
-                "-i", url,
+                "-i", input_filename,
                 "-map", "V:0?",                          # select video stream
                 "-map", "0:a?",                          # ignore audio if doesn't exist
                 "-c:v", "libx264",                       # specify video encoder
@@ -148,18 +160,18 @@ def convert_worker(target_format, message, url, config, bot):
                 "-preset", "veryslow",                   # https://trac.ffmpeg.org/wiki/Encode/H.264#a2.Chooseapresetandtune
                 "-timelimit", "900",                     # prevent DoS (exit after 15 min)
                 "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",  # https://stackoverflow.com/questions/20847674/ffmpeg-libx264-height-not-divisible-by-2#20848224
-                filename,
+                output_filename,
             ]
         )
     elif target_format == "jpg":
         ffmpeg_process = subprocess.Popen(
             [
-                "ffmpeg", "-v", "error",
+                "ffmpeg", "-v", "error", "-hwaccel",
                 "-threads", str(config["ffmpeg_threads"]),
                 "-thread_type", "slice",
-                "-i", url,                # allow ffmpeg to download image by it url
+                "-i", input_filename,
                 "-timelimit", "60",       # prevent DoS (exit after 15 min)
-                filename,
+                output_filename,
             ]
         )
 
@@ -167,7 +179,7 @@ def convert_worker(target_format, message, url, config, bot):
     old_progress = ""
     while ffmpeg_process.poll() == None:
         try:
-            raw_output_size = os.stat(filename).st_size
+            raw_output_size = os.stat(output_filename).st_size
         except FileNotFoundError:
             raw_output_size = 0
 
@@ -187,15 +199,15 @@ def convert_worker(target_format, message, url, config, bot):
     if ffmpeg_process.returncode != 0:
         update_status_message(status_message, ErrorMessage.converting_webm)
         # Clean up and close pipe explicitly
-        rm(filename)
+        rm(output_filename)
         return
 
     # Check output file size
-    output_size = os.path.getsize(filename)
+    output_size = os.path.getsize(output_filename)
     if output_size >= MAXIMUM_FILESIZE_ALLOWED:
         update_status_message(status_message, ErrorMessage.huge_file)
         # Clean up and close pipe explicitly
-        rm(filename)
+        rm(output_filename)
         return
 
     # Default params for sending operation
@@ -214,7 +226,7 @@ def convert_worker(target_format, message, url, config, bot):
                 "-select_streams", "v:0",
                 "-show_entries", "format=duration",
                 "-of", "default=noprint_wrappers=1:nokey=1",
-                filename,
+                output_filename,
             ],
             stdout=subprocess.PIPE,
         ).stdout.decode("utf-8").strip()
@@ -229,7 +241,7 @@ def convert_worker(target_format, message, url, config, bot):
                 "-select_streams", "v:0",
                 "-show_entries", "stream=width,height",
                 "-of", "csv=s=x:p=0",
-                filename,
+                output_filename,
             ],
             stdout=subprocess.PIPE,
         ).stdout.decode("utf-8").strip()
@@ -242,8 +254,8 @@ def convert_worker(target_format, message, url, config, bot):
         thumbnail = "".join([config["temp_path"], random_string(), ".jpg"])
         generate_thumbnail_process = subprocess.Popen(
             [
-                "ffmpeg", "-v", "error",
-                "-i", filename,
+                "ffmpeg", "-v", "error", "-hwaccel",
+                "-i", output_filename,
                 "-vcodec", "mjpeg",
                 "-vframes", "1",
                 "-an",
@@ -265,12 +277,12 @@ def convert_worker(target_format, message, url, config, bot):
             return
 
         filelist = [
-            ("video", (random_string() + ".mp4", open(filename, "rb"), "video/mp4")),
+            ("video", (random_string() + ".mp4", open(output_filename, "rb"), "video/mp4")),
             ("thumb", (random_string() + ".jpg", open(thumbnail, "rb"), "image/jpeg")),
         ]
     elif target_format == "jpg":
         filelist = [
-            ("photo", (random_string() + ".jpg", open(filename, "rb"), "image/jpeg"))
+            ("photo", (random_string() + ".jpg", open(output_filename, "rb"), "image/jpeg"))
         ]
 
     # Upload to Telegram
