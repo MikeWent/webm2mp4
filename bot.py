@@ -13,7 +13,6 @@ import telebot
 
 import utils
 import text
-from utils import bytes2human
 
 MAXIMUM_FILESIZE_ALLOWED = 50 * 1024 * 1024  # ~50 MB
 config = utils.load_config("config.json")
@@ -109,8 +108,8 @@ def convert_worker(target_format, message, url, config, bot):
             ffmpeg_process.kill()
             utils.rm(output_filename)
 
-        input_size = bytes2human(raw_input_size)
-        output_size = bytes2human(raw_output_size)
+        input_size = utils.bytes2human(raw_input_size)
+        output_size = utils.bytes2human(raw_output_size)
 
         progress = f"{output_size} / {input_size}"
         # Update progress only if it changed
@@ -208,6 +207,9 @@ def convert_worker(target_format, message, url, config, bot):
                 ("thumb", (utils.random_string() + ".jpg", open(thumbnail, "rb"), "image/jpeg")),
             ],
         )
+        utils.rm(output_filename)
+        utils.rm(thumbnail)
+
     elif target_format == "png":
         # Upload to Telegram
         update_status_message(text.uploading)
@@ -221,7 +223,8 @@ def convert_worker(target_format, message, url, config, bot):
             data=data,
             files=[("document", (utils.random_string() + ".png", open(output_filename, "rb"), "image/png"))],
         )
-
+        utils.rm(output_filename)
+        
     bot.delete_message(message.chat.id, status_message.message_id)
 
 
