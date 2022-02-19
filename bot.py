@@ -207,6 +207,7 @@ def convert_worker(target_format, message, url, config, bot):
                 ("thumb", (utils.random_string() + ".jpg", open(thumbnail, "rb"), "image/jpeg")),
             ],
         )
+        utils.rm(input_filename)
         utils.rm(output_filename)
         utils.rm(thumbnail)
 
@@ -223,6 +224,7 @@ def convert_worker(target_format, message, url, config, bot):
             data=data,
             files=[("document", (utils.random_string() + ".png", open(output_filename, "rb"), "image/png"))],
         )
+        utils.rm(input_filename)
         utils.rm(output_filename)
         
     bot.delete_message(message.chat.id, status_message.message_id)
