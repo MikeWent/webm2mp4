@@ -1,0 +1,8 @@
+services:
+  webm2mp4bot:
+    build: .
+    container_name: webm2mp4bot
+    environment:
+      - TELEGRAM_BOT_TOKEN=xxx
+      - FFMPEG_THREADS=2
+      
