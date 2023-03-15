@@ -5,33 +5,37 @@
 
 import re
 import subprocess
-import time
 import threading
+import time
+from os import getenv
 
 import requests
 import telebot
 
-import utils
 import text
+import utils
 
 MAXIMUM_FILESIZE_ALLOWED = 50 * 1024 * 1024  # ~50 MB
-config = utils.load_config("config.json")
-if config.get("telegram_token") == "":
-    print(f"Please specify Telegram bot token in config.json")
-    exit(1)
+TEMP_PATH = "/tmp/"
+TELEGRAM_BOT_TOKEN = getenv("TELEGRAM_BOT_TOKEN")
+FFMPEG_THREADS = getenv("FFMPEG_THREADS")
 
-def convert_worker(target_format, message, url, config, bot):
+
+def convert_worker(target_format, message, url, bot):
     """Generic process spawned every time user sends a link or a file"""
-    input_filename = "".join([config["temp_path"], utils.random_string()])
-    output_filename = "".join([config["temp_path"], utils.random_string(), ".", target_format])
+    input_filename = "".join([TEMP_PATH, utils.random_string()])
+    output_filename = "".join([TEMP_PATH, utils.random_string(), ".", target_format])
 
     # Tell user that we are working
     status_message = bot.reply_to(message, text.starting, parse_mode="HTML")
+
     def update_status_message(new_text):
-        bot.edit_message_text(chat_id=status_message.chat.id,
-                              message_id=status_message.message_id,
-                              text=new_text,
-                              parse_mode="HTML")
+        bot.edit_message_text(
+            chat_id=status_message.chat.id,
+            message_id=status_message.message_id,
+            text=new_text,
+            parse_mode="HTML",
+        )
 
     # Try to download URL
     try:
@@ -69,28 +73,46 @@ def convert_worker(target_format, message, url, config, bot):
     if target_format == "mp4":
         ffmpeg_process = subprocess.Popen(
             [
-                "ffmpeg", "-v", "error",
-                "-threads", str(config["ffmpeg_threads"]),
-                "-i", input_filename,
-                "-map", "V:0?",                          # select video stream
-                "-map", "0:a?",                          # ignore audio if doesn't exist
-                "-c:v", "libx264",                       # specify video encoder
-                "-max_muxing_queue_size", "9999",        # https://trac.ffmpeg.org/ticket/6375
-                "-movflags", "+faststart",               # optimize for streaming
-                "-preset", "veryslow",                   # https://trac.ffmpeg.org/wiki/Encode/H.264#a2.Chooseapresetandtune
-                "-timelimit", "900",                     # prevent DoS (exit after 15 min)
-                "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",  # https://stackoverflow.com/questions/20847674/ffmpeg-libx264-height-not-divisible-by-2#20848224
+                "ffmpeg",
+                "-v",
+                "error",
+                "-threads",
+                FFMPEG_THREADS,
+                "-i",
+                input_filename,
+                "-map",
+                "V:0?",  # select video stream
+                "-map",
+                "0:a?",  # ignore audio if doesn't exist
+                "-c:v",
+                "libx264",  # specify video encoder
+                "-max_muxing_queue_size",
+                "9999",  # https://trac.ffmpeg.org/ticket/6375
+                "-movflags",
+                "+faststart",  # optimize for streaming
+                "-preset",
+                "veryslow",  # https://trac.ffmpeg.org/wiki/Encode/H.264#a2.Chooseapresetandtune
+                "-timelimit",
+                "900",  # prevent DoS (exit after 15 min)
+                "-vf",
+                "pad=ceil(iw/2)*2:ceil(ih/2)*2",  # https://stackoverflow.com/questions/20847674/ffmpeg-libx264-height-not-divisible-by-2#20848224
                 output_filename,
             ]
         )
     elif target_format == "png":
         ffmpeg_process = subprocess.Popen(
             [
-                "ffmpeg", "-v", "error",
-                "-threads", str(config["ffmpeg_threads"]),
-                "-thread_type", "slice",
-                "-i", input_filename,
-                "-timelimit", "60",       # prevent DoS (exit after 15 min)
+                "ffmpeg",
+                "-v",
+                "error",
+                "-threads",
+                FFMPEG_THREADS,
+                "-thread_type",
+                "slice",
+                "-i",
+                input_filename,
+                "-timelimit",
+                "60",  # prevent DoS (exit after 15 min)
                 output_filename,
             ]
         )
@@ -99,7 +121,7 @@ def convert_worker(target_format, message, url, config, bot):
     old_progress = ""
     while ffmpeg_process.poll() == None:
         try:
-            raw_output_size =  utils.filesize(output_filename)
+            raw_output_size = utils.filesize(output_filename)
         except FileNotFoundError:
             raw_output_size = 0
 
@@ -134,57 +156,80 @@ def convert_worker(target_format, message, url, config, bot):
         return
 
     # Default params for sending operation
-    data = {
-        "chat_id": message.chat.id,
-        "reply_to_message_id": message.message_id
-    }
+    data = {"chat_id": message.chat.id, "reply_to_message_id": message.message_id}
 
     if target_format == "mp4":
         data.update({"supports_streaming": True})
         # 1. Get video duration in seconds
-        video_duration = subprocess.run(
-            [
-                "ffprobe", "-v", "error",
-                "-select_streams", "v:0",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
-                output_filename,
-            ],
-            stdout=subprocess.PIPE,
-        ).stdout.decode("utf-8").strip()
+        video_duration = (
+            subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                    output_filename,
+                ],
+                stdout=subprocess.PIPE,
+            )
+            .stdout.decode("utf-8")
+            .strip()
+        )
 
         video_duration = round(float(video_duration))
         data.update({"duration": video_duration})
 
         # 2. Get video height and width
-        video_props = subprocess.run(
-            [
-                "ffprobe", "-v", "error",
-                "-select_streams", "v:0",
-                "-show_entries", "stream=width,height",
-                "-of", "csv=s=x:p=0",
-                output_filename,
-            ],
-            stdout=subprocess.PIPE,
-        ).stdout.decode("utf-8").strip()
+        video_props = (
+            subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=width,height",
+                    "-of",
+                    "csv=s=x:p=0",
+                    output_filename,
+                ],
+                stdout=subprocess.PIPE,
+            )
+            .stdout.decode("utf-8")
+            .strip()
+        )
 
         video_width, video_height = video_props.split("x")
         data.update({"width": video_width, "height": video_height})
 
         # 3. Take one frame from the middle of the video
         update_status_message(text.generating_thumbnail)
-        thumbnail = "".join([config["temp_path"], utils.random_string(), ".jpg"])
+        thumbnail = "".join([TEMP_PATH, utils.random_string(), ".jpg"])
         generate_thumbnail_process = subprocess.Popen(
             [
-                "ffmpeg", "-v", "error",
-                "-i", output_filename,
-                "-vcodec", "mjpeg",
-                "-vframes", "1",
+                "ffmpeg",
+                "-v",
+                "error",
+                "-i",
+                output_filename,
+                "-vcodec",
+                "mjpeg",
+                "-vframes",
+                "1",
                 "-an",
-                "-f", "rawvideo",
-                "-ss", str(int(video_duration / 2)),
+                "-f",
+                "rawvideo",
+                "-ss",
+                str(int(video_duration / 2)),
                 # keep the limit of 90px height/width (Telegram API) while preserving the aspect ratio
-                "-vf", "scale='if(gt(iw,ih),90,trunc(oh*a/2)*2)':'if(gt(iw,ih),trunc(ow/a/2)*2,90)'",
+                "-vf",
+                "scale='if(gt(iw,ih),90,trunc(oh*a/2)*2)':'if(gt(iw,ih),trunc(ow/a/2)*2,90)'",
                 thumbnail,
             ]
         )
@@ -200,11 +245,25 @@ def convert_worker(target_format, message, url, config, bot):
 
         update_status_message(text.uploading)
         requests.post(
-            "https://api.telegram.org/bot{}/sendVideo".format(config["telegram_token"]),
+            "https://api.telegram.org/bot{}/sendVideo".format(TELEGRAM_BOT_TOKEN),
             data=data,
             files=[
-                ("video", (utils.random_string() + ".mp4", open(output_filename, "rb"), "video/mp4")),
-                ("thumb", (utils.random_string() + ".jpg", open(thumbnail, "rb"), "image/jpeg")),
+                (
+                    "video",
+                    (
+                        utils.random_string() + ".mp4",
+                        open(output_filename, "rb"),
+                        "video/mp4",
+                    ),
+                ),
+                (
+                    "thumb",
+                    (
+                        utils.random_string() + ".jpg",
+                        open(thumbnail, "rb"),
+                        "image/jpeg",
+                    ),
+                ),
             ],
         )
         utils.rm(input_filename)
@@ -215,23 +274,41 @@ def convert_worker(target_format, message, url, config, bot):
         # Upload to Telegram
         update_status_message(text.uploading)
         requests.post(
-            "https://api.telegram.org/bot{}/sendPhoto".format(config["telegram_token"]),
+            "https://api.telegram.org/bot{}/sendPhoto".format(TELEGRAM_BOT_TOKEN),
             data=data,
-            files=[("photo", (utils.random_string() + ".png", open(output_filename, "rb"), "image/png"))],
+            files=[
+                (
+                    "photo",
+                    (
+                        utils.random_string() + ".png",
+                        open(output_filename, "rb"),
+                        "image/png",
+                    ),
+                )
+            ],
         )
         requests.post(
-            "https://api.telegram.org/bot{}/sendDocument".format(config["telegram_token"]),
+            "https://api.telegram.org/bot{}/sendDocument".format(TELEGRAM_BOT_TOKEN),
             data=data,
-            files=[("document", (utils.random_string() + ".png", open(output_filename, "rb"), "image/png"))],
+            files=[
+                (
+                    "document",
+                    (
+                        utils.random_string() + ".png",
+                        open(output_filename, "rb"),
+                        "image/png",
+                    ),
+                )
+            ],
         )
         utils.rm(input_filename)
         utils.rm(output_filename)
-        
+
     bot.delete_message(message.chat.id, status_message.message_id)
 
 
-telegram_token = config["telegram_token"]
-bot = telebot.TeleBot(telegram_token)
+bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
+
 
 @bot.message_handler(commands=["start", "help"])
 def start_help(message):
@@ -245,8 +322,11 @@ def start_help(message):
     bot.send_message(message.chat.id, text.start, parse_mode="HTML")
     bot.send_message(message.chat.id, text.help, parse_mode="HTML")
 
+
 # Handle URLs
 URL_REGEXP = r"(http.?:\/\/.*\.(webm|webp|mp4))"
+
+
 @bot.message_handler(regexp=URL_REGEXP)
 def handle_urls(message):
     if message.chat.type != "private":
@@ -265,7 +345,16 @@ def handle_urls(message):
     else:
         target_format = "mp4"
 
-    threading.Thread(target=convert_worker, kwargs={"target_format": target_format, "message": message, "url": url, "config": config, "bot": bot}).run()
+    threading.Thread(
+        target=convert_worker,
+        kwargs={
+            "target_format": target_format,
+            "message": message,
+            "url": url,
+            "bot": bot,
+        },
+    ).run()
+
 
 # Handle files
 @bot.message_handler(content_types=["document", "video", "sticker"])
@@ -290,13 +379,23 @@ def handle_files(message):
             return
         target = message.sticker.file_id
 
-    url = "https://api.telegram.org/file/bot{0}/{1}".format(telegram_token, bot.get_file(target).file_path)
+    url = "https://api.telegram.org/file/bot{0}/{1}".format(
+        TELEGRAM_BOT_TOKEN, bot.get_file(target).file_path
+    )
     if url.endswith("webp"):
         target_format = "png"
     else:
         target_format = "mp4"
 
-    threading.Thread(target=convert_worker, kwargs={"target_format": target_format, "message": message, "url": url, "config": config, "bot": bot}).run()
+    threading.Thread(
+        target=convert_worker,
+        kwargs={
+            "target_format": target_format,
+            "message": message,
+            "url": url,
+            "bot": bot,
+        },
+    ).run()
 
 
 bot.polling(none_stop=True)

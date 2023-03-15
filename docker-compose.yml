@@ -3,6 +3,6 @@ services:
     build: .
     container_name: webm2mp4bot
     environment:
-      - TELEGRAM_BOT_TOKEN=xxx
+      - TELEGRAM_BOT_TOKEN=
       - FFMPEG_THREADS=2
-      
+    restart: always
